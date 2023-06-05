@@ -1,0 +1,65 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  GithubAuthMode:
+    Type: String
+    AllowedValues:
+      - PAT
+      - Application
+
+  GithubPAT:
+    Type: String
+    Default: ""
+
+  GithubOrg:
+    Type: String
+
+Resources:
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: logging-write
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              Effect: Allow
+              Action:
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: "*"
+
+  GenerateJitFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: "index.main"
+      Runtime: python3.9
+      CodeUri: jit_api
+      Role: !GetAtt LambdaRole.Arn
+      Timeout: 60
+      Environment:
+        Variables:
+          GITHUB_AUTH_MODE: !Ref GithubAuthMode
+          GITHUB_PAT: !Ref GithubPAT
+          GITHUB_ORG: !Ref GithubOrg
+      FunctionUrlConfig:
+        AuthType: AWS_IAM
+
+  GenerateJitLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${GenerateJitFunction}"
+      RetentionInDays: 1
+
+Outputs:
+  GenerateJitUrl:
+    Value: !GetAtt GenerateJitFunctionUrl.FunctionUrl
