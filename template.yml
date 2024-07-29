@@ -7,14 +7,43 @@ Parameters:
     Type: String
     AllowedValues:
       - PAT
-      - Application
+      - APP
 
   GithubPAT:
     Type: String
     Default: ""
 
+  GithubAppId:
+    Type: String
+    Default: ""
+
+  GithubAppPrivateKey:
+    Type: "AWS::SSM::Parameter::Name"
+    Default: ""
+
+  GithubAppInstallationId:
+    Type: String
+    Default: ""
+
   GithubOrg:
     Type: String
+
+  GithubRunnerGroupId:
+    Type: String
+    Default: "1"
+
+  GithubRunnerLabels:
+    Type: CommaDelimitedList
+    Default: "self-hosted"
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+
+Conditions:
+  IsUsingGithubApp: !Equals [!Ref GithubAuthMode, "APP"]
 
 Resources:
   LambdaRole:
@@ -37,6 +66,43 @@ Resources:
                 - logs:CreateLogStream
                 - logs:PutLogEvents
               Resource: "*"
+        - PolicyName: manage-enis
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              Effect: Allow
+              Action:
+                - ec2:CreateNetworkInterface
+                - ec2:DescribeNetworkInterfaces
+                - ec2:DeleteNetworkInterface
+                - ec2:AssignPrivateIpAddresses
+                - ec2:UnassignPrivateIpAddresses
+              Resource: "*"
+        - !If
+          - IsUsingGithubApp
+          - PolicyName: get-private-key
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${GithubAppPrivateKey}"
+          - !Ref "AWS::NoValue"
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "Security group for ${AWS::StackName}"
+      VpcId: !Ref VpcId
+
+  GenerateJitDependencies:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      CompatibleRuntimes:
+        - python3.9
+      ContentUri: python_deps
+      RetentionPolicy: Delete
 
   GenerateJitFunction:
     Type: AWS::Serverless::Function
@@ -44,15 +110,26 @@ Resources:
       Handler: "index.main"
       Runtime: python3.9
       CodeUri: jit_api
+      Layers:
+        - !Ref GenerateJitDependencies
       Role: !GetAtt LambdaRole.Arn
       Timeout: 60
       Environment:
         Variables:
           GITHUB_AUTH_MODE: !Ref GithubAuthMode
           GITHUB_PAT: !Ref GithubPAT
+          GITHUB_APP_ID: !Ref GithubAppId
+          GITHUB_APP_PRIVATE_KEY: !Ref GithubAppPrivateKey
+          GITHUB_APP_INSTALLATION_ID: !Ref GithubAppInstallationId
           GITHUB_ORG: !Ref GithubOrg
+          GITHUB_RUNNER_GROUP_ID: !Ref GithubRunnerGroupId
+          GITHUB_RUNNER_LABELS: !Join [',', !Ref GithubRunnerLabels]
       FunctionUrlConfig:
         AuthType: AWS_IAM
+      VpcConfig:
+        SecurityGroupIds:
+          - !GetAtt SecurityGroup.GroupId
+        SubnetIds: !Ref SubnetIds
 
   GenerateJitLogGroup:
     Type: AWS::Logs::LogGroup

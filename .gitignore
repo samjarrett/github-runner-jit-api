@@ -1,2 +1,2 @@
-jit_api/urllib3
+python_deps
 *.packaged.yml
