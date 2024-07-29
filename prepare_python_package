@@ -1,0 +1,18 @@
+#!/bin/bash -eu
+set -o pipefail
+
+rm -rf python_deps/python/
+mkdir -p python_deps/python
+
+pip --version
+
+pip install \
+  --platform manylinux2014_x86_64 \
+  --implementation cp \
+  --only-binary=:all: \
+  --target=python_deps/python \
+  --requirement requirements.txt
+
+# rm -rf python_deps/python/bin python_deps/python/*.dist-info python_deps/python/.gitkeep
+
+# find python_deps -name "__pycache__" -type d | xargs rm -rf
